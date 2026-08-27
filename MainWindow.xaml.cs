@@ -355,6 +355,27 @@ public partial class MainWindow : Window
         StandingsExporter.ExportCsv(dialog.FileName, rows);
     }
 
+    private void WithdrawPlayer_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_seasonId.HasValue || StandingsGrid.SelectedItem is not Standing player)
+        {
+            MessageBox.Show(T("Select a player in the table first."), T("No player selected"), MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var confirmation = MessageBox.Show(
+            string.Format(T("Remove {0} from this competition? Their matches, opponents' points from those matches, and match statistics will be deleted."), player.Player),
+            T("Withdraw player"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.Yes) return;
+
+        _database.WithdrawPlayer(_seasonId.Value, player.PlayerId);
+        _selectedMatch = null;
+        ClearStatsInputs();
+        LoadSeasonData();
+        RefreshDashboard();
+        MessageBox.Show(T("Player withdrawn. The table has been recalculated."), T("Player withdrawn"), MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
     private void ExportTournament_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireSeason()) return;

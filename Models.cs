@@ -51,6 +51,7 @@ public sealed class LeagueMatch : INotifyPropertyChanged
 
 public sealed class Standing
 {
+    public long PlayerId { get; set; }
     public int Position { get; set; }
     public string Player { get; set; } = string.Empty;
     public int Played { get; set; }
@@ -104,6 +105,7 @@ public sealed class PlayerBackup
 {
     public long SourceId { get; set; }
     public string Name { get; set; } = string.Empty;
+    public bool IsWithdrawn { get; set; }
 }
 
 public sealed class MatchBackup

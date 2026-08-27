@@ -46,7 +46,7 @@ public sealed class LeagueDatabase
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS Seasons (Id INTEGER PRIMARY KEY, Name TEXT NOT NULL, Type TEXT NOT NULL DEFAULT 'Season', Meetings INTEGER NOT NULL, LegsToWin INTEGER NOT NULL DEFAULT 3, FormatType TEXT NOT NULL DEFAULT 'FirstTo', CreatedAt TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS ApplicationSettings (SettingKey TEXT PRIMARY KEY, SettingValue TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS Players (Id INTEGER PRIMARY KEY, SeasonId INTEGER NOT NULL REFERENCES Seasons(Id) ON DELETE CASCADE, Name TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS Players (Id INTEGER PRIMARY KEY, SeasonId INTEGER NOT NULL REFERENCES Seasons(Id) ON DELETE CASCADE, Name TEXT NOT NULL, IsWithdrawn INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS Matches (Id INTEGER PRIMARY KEY, SeasonId INTEGER NOT NULL REFERENCES Seasons(Id) ON DELETE CASCADE, RoundNumber INTEGER NOT NULL, HomePlayerId INTEGER NOT NULL REFERENCES Players(Id), AwayPlayerId INTEGER NOT NULL REFERENCES Players(Id), MatchDate TEXT NULL, HomeScore INTEGER NULL, AwayScore INTEGER NULL, RecordedAt TEXT NULL);
             CREATE TABLE IF NOT EXISTS PlayerMatchStats (MatchId INTEGER NOT NULL REFERENCES Matches(Id) ON DELETE CASCADE, PlayerId INTEGER NOT NULL REFERENCES Players(Id), ThreeDartAverage REAL NULL, LegsPlayed INTEGER NOT NULL DEFAULT 0, HighFinish INTEGER NULL, ShortLeg INTEGER NULL, Scores80 INTEGER NOT NULL DEFAULT 0, Scores100 INTEGER NOT NULL DEFAULT 0, Scores140 INTEGER NOT NULL DEFAULT 0, Scores180 INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (MatchId, PlayerId));
             """;
@@ -107,6 +107,19 @@ public sealed class LeagueDatabase
         {
             using var migration = connection.CreateCommand();
             migration.CommandText = "ALTER TABLE Matches ADD COLUMN MatchDate TEXT NULL;";
+            migration.ExecuteNonQuery();
+        }
+
+        using var playerColumnCheck = connection.CreateCommand();
+        playerColumnCheck.CommandText = "PRAGMA table_info(Players);";
+        using var playerReader = playerColumnCheck.ExecuteReader();
+        var hasWithdrawnColumn = false;
+        while (playerReader.Read()) hasWithdrawnColumn |= playerReader.GetString(1).Equals("IsWithdrawn", StringComparison.OrdinalIgnoreCase);
+        playerReader.Dispose();
+        if (!hasWithdrawnColumn)
+        {
+            using var migration = connection.CreateCommand();
+            migration.CommandText = "ALTER TABLE Players ADD COLUMN IsWithdrawn INTEGER NOT NULL DEFAULT 0;";
             migration.ExecuteNonQuery();
         }
     }
@@ -180,10 +193,10 @@ public sealed class LeagueDatabase
 
         using (var players = connection.CreateCommand())
         {
-            players.CommandText = "SELECT Id, Name FROM Players WHERE SeasonId=$season ORDER BY Id;";
+            players.CommandText = "SELECT Id, Name, IsWithdrawn FROM Players WHERE SeasonId=$season ORDER BY Id;";
             players.Parameters.AddWithValue("$season", seasonId);
             using var reader = players.ExecuteReader();
-            while (reader.Read()) backup.Players.Add(new PlayerBackup { SourceId = reader.GetInt64(0), Name = reader.GetString(1) });
+            while (reader.Read()) backup.Players.Add(new PlayerBackup { SourceId = reader.GetInt64(0), Name = reader.GetString(1), IsWithdrawn = reader.GetInt32(2) == 1 });
         }
         using (var matches = connection.CreateCommand())
         {
@@ -225,8 +238,8 @@ public sealed class LeagueDatabase
         {
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText = "INSERT INTO Players (SeasonId, Name) VALUES ($season, $name); SELECT last_insert_rowid();";
-            command.Parameters.AddWithValue("$season", seasonId); command.Parameters.AddWithValue("$name", player.Name);
+            command.CommandText = "INSERT INTO Players (SeasonId, Name, IsWithdrawn) VALUES ($season, $name, $withdrawn); SELECT last_insert_rowid();";
+            command.Parameters.AddWithValue("$season", seasonId); command.Parameters.AddWithValue("$name", player.Name); command.Parameters.AddWithValue("$withdrawn", player.IsWithdrawn ? 1 : 0);
             players[player.SourceId] = (long)command.ExecuteScalar()!;
         }
         foreach (var match in backup.Matches)
@@ -271,6 +284,27 @@ public sealed class LeagueDatabase
         command.Parameters.AddWithValue("$season", seasonId);
         command.Parameters.AddWithValue("$round", roundNumber);
         command.ExecuteNonQuery();
+    }
+
+    public void WithdrawPlayer(long seasonId, long playerId)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        using (var matches = connection.CreateCommand())
+        {
+            matches.Transaction = transaction;
+            matches.CommandText = "DELETE FROM Matches WHERE SeasonId=$season AND (HomePlayerId=$player OR AwayPlayerId=$player);";
+            matches.Parameters.AddWithValue("$season", seasonId); matches.Parameters.AddWithValue("$player", playerId);
+            matches.ExecuteNonQuery();
+        }
+        using (var player = connection.CreateCommand())
+        {
+            player.Transaction = transaction;
+            player.CommandText = "UPDATE Players SET IsWithdrawn=1 WHERE Id=$player AND SeasonId=$season;";
+            player.Parameters.AddWithValue("$player", playerId); player.Parameters.AddWithValue("$season", seasonId);
+            player.ExecuteNonQuery();
+        }
+        transaction.Commit();
     }
 
     public void SaveResult(LeagueMatch match)
@@ -328,11 +362,11 @@ public sealed class LeagueDatabase
               SELECT HomePlayerId PlayerId, HomeScore ForLegs, AwayScore AgainstLegs FROM Matches WHERE SeasonId=$season AND HomeScore IS NOT NULL AND AwayScore IS NOT NULL
               UNION ALL SELECT AwayPlayerId, AwayScore, HomeScore FROM Matches WHERE SeasonId=$season AND HomeScore IS NOT NULL AND AwayScore IS NOT NULL
             )
-            SELECT p.Name, COUNT(e.PlayerId), COALESCE(SUM(CASE WHEN e.ForLegs>e.AgainstLegs THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN e.ForLegs<e.AgainstLegs THEN 1 ELSE 0 END),0), COALESCE(SUM(e.ForLegs),0), COALESCE(SUM(e.AgainstLegs),0), COALESCE(SUM(CASE WHEN e.ForLegs>e.AgainstLegs THEN 2 WHEN e.ForLegs=e.AgainstLegs THEN 1 ELSE 0 END),0)
-            FROM Players p LEFT JOIN entries e ON e.PlayerId=p.Id WHERE p.SeasonId=$season GROUP BY p.Id, p.Name ORDER BY 7 DESC, (5-6) DESC, 5 DESC, p.Name;
+            SELECT p.Id, p.Name, COUNT(e.PlayerId), COALESCE(SUM(CASE WHEN e.ForLegs>e.AgainstLegs THEN 1 ELSE 0 END),0), COALESCE(SUM(CASE WHEN e.ForLegs<e.AgainstLegs THEN 1 ELSE 0 END),0), COALESCE(SUM(e.ForLegs),0), COALESCE(SUM(e.AgainstLegs),0), COALESCE(SUM(CASE WHEN e.ForLegs>e.AgainstLegs THEN 2 WHEN e.ForLegs=e.AgainstLegs THEN 1 ELSE 0 END),0)
+            FROM Players p LEFT JOIN entries e ON e.PlayerId=p.Id WHERE p.SeasonId=$season AND p.IsWithdrawn=0 GROUP BY p.Id, p.Name ORDER BY 8 DESC, (6-7) DESC, 6 DESC, p.Name;
             """;
         command.Parameters.AddWithValue("$season", seasonId); using var reader = command.ExecuteReader(); var standings = new List<Standing>(); var position = 1;
-        while (reader.Read()) standings.Add(new Standing { Position = position++, Player = reader.GetString(0), Played = reader.GetInt32(1), Won = reader.GetInt32(2), Lost = reader.GetInt32(3), LegsFor = reader.GetInt32(4), LegsAgainst = reader.GetInt32(5), Points = reader.GetInt32(6) });
+        while (reader.Read()) standings.Add(new Standing { PlayerId = reader.GetInt64(0), Position = position++, Player = reader.GetString(1), Played = reader.GetInt32(2), Won = reader.GetInt32(3), Lost = reader.GetInt32(4), LegsFor = reader.GetInt32(5), LegsAgainst = reader.GetInt32(6), Points = reader.GetInt32(7) });
         return standings;
     }
 
@@ -341,7 +375,7 @@ public sealed class LeagueDatabase
         using var connection = Open(); using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT p.Name, AVG(s.ThreeDartAverage), COUNT(s.MatchId), COALESCE(SUM(s.LegsPlayed),0), MAX(s.HighFinish), MIN(s.ShortLeg), COALESCE(SUM(s.Scores80),0), COALESCE(SUM(s.Scores100),0), COALESCE(SUM(s.Scores140),0), COALESCE(SUM(s.Scores180),0)
-            FROM Players p LEFT JOIN PlayerMatchStats s ON s.PlayerId=p.Id WHERE p.SeasonId=$season GROUP BY p.Id, p.Name ORDER BY p.Name;
+            FROM Players p LEFT JOIN PlayerMatchStats s ON s.PlayerId=p.Id WHERE p.SeasonId=$season AND p.IsWithdrawn=0 GROUP BY p.Id, p.Name ORDER BY p.Name;
             """;
         command.Parameters.AddWithValue("$season", seasonId); using var reader = command.ExecuteReader(); var stats = new List<PlayerStatistics>();
         while (reader.Read()) stats.Add(new PlayerStatistics { Player = reader.GetString(0), Average = reader.IsDBNull(1) ? null : reader.GetDouble(1), Games = reader.GetInt32(2), Legs = reader.GetInt32(3), HighFinish = reader.IsDBNull(4) ? null : reader.GetInt32(4), ShortLeg = reader.IsDBNull(5) ? null : reader.GetInt32(5), Scores80 = reader.GetInt32(6), Scores100 = reader.GetInt32(7), Scores140 = reader.GetInt32(8), Scores180 = reader.GetInt32(9) });

@@ -172,6 +172,83 @@ public sealed class LeagueDatabase
         return competitions;
     }
 
+    public TournamentBackup GetTournamentBackup(long seasonId)
+    {
+        var competition = GetCompetitions().FirstOrDefault(item => item.Id == seasonId) ?? throw new InvalidOperationException("Competition not found.");
+        using var connection = Open();
+        var backup = new TournamentBackup { Competition = competition };
+
+        using (var players = connection.CreateCommand())
+        {
+            players.CommandText = "SELECT Id, Name FROM Players WHERE SeasonId=$season ORDER BY Id;";
+            players.Parameters.AddWithValue("$season", seasonId);
+            using var reader = players.ExecuteReader();
+            while (reader.Read()) backup.Players.Add(new PlayerBackup { SourceId = reader.GetInt64(0), Name = reader.GetString(1) });
+        }
+        using (var matches = connection.CreateCommand())
+        {
+            matches.CommandText = "SELECT Id, RoundNumber, HomePlayerId, AwayPlayerId, MatchDate, HomeScore, AwayScore FROM Matches WHERE SeasonId=$season ORDER BY RoundNumber, Id;";
+            matches.Parameters.AddWithValue("$season", seasonId);
+            using var reader = matches.ExecuteReader();
+            while (reader.Read()) backup.Matches.Add(new MatchBackup { SourceId = reader.GetInt64(0), RoundNumber = reader.GetInt32(1), HomePlayerSourceId = reader.GetInt64(2), AwayPlayerSourceId = reader.GetInt64(3), MatchDate = reader.IsDBNull(4) ? null : DateTime.Parse(reader.GetString(4)), HomeScore = reader.IsDBNull(5) ? null : reader.GetInt32(5), AwayScore = reader.IsDBNull(6) ? null : reader.GetInt32(6) });
+        }
+        using (var stats = connection.CreateCommand())
+        {
+            stats.CommandText = "SELECT s.MatchId, s.PlayerId, s.ThreeDartAverage, s.LegsPlayed, s.HighFinish, s.ShortLeg, s.Scores80, s.Scores100, s.Scores140, s.Scores180 FROM PlayerMatchStats s JOIN Matches m ON m.Id=s.MatchId WHERE m.SeasonId=$season;";
+            stats.Parameters.AddWithValue("$season", seasonId);
+            using var reader = stats.ExecuteReader();
+            while (reader.Read()) backup.Statistics.Add(new MatchStatsBackup { MatchSourceId = reader.GetInt64(0), PlayerSourceId = reader.GetInt64(1), Statistics = new MatchStats { ThreeDartAverage = reader.IsDBNull(2) ? null : reader.GetDouble(2), LegsPlayed = reader.GetInt32(3), HighFinish = reader.IsDBNull(4) ? null : reader.GetInt32(4), ShortLeg = reader.IsDBNull(5) ? null : reader.GetInt32(5), Scores80 = reader.GetInt32(6), Scores100 = reader.GetInt32(7), Scores140 = reader.GetInt32(8), Scores180 = reader.GetInt32(9) } });
+        }
+        return backup;
+    }
+
+    public long ImportTournament(TournamentBackup backup)
+    {
+        using var connection = Open();
+        using var transaction = connection.BeginTransaction();
+        var players = new Dictionary<long, long>();
+        var matches = new Dictionary<long, long>();
+        long seasonId;
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = "INSERT INTO Seasons (Name, Type, Meetings, LegsToWin, FormatType, CreatedAt) VALUES ($name, $type, $meetings, $legs, $format, $created); SELECT last_insert_rowid();";
+            command.Parameters.AddWithValue("$name", backup.Competition.Name);
+            command.Parameters.AddWithValue("$type", backup.Competition.Type);
+            command.Parameters.AddWithValue("$meetings", backup.Competition.Meetings);
+            command.Parameters.AddWithValue("$legs", backup.Competition.LegsToWin);
+            command.Parameters.AddWithValue("$format", backup.Competition.FormatType);
+            command.Parameters.AddWithValue("$created", backup.Competition.CreatedAt.ToString("O"));
+            seasonId = (long)command.ExecuteScalar()!;
+        }
+        foreach (var player in backup.Players)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "INSERT INTO Players (SeasonId, Name) VALUES ($season, $name); SELECT last_insert_rowid();";
+            command.Parameters.AddWithValue("$season", seasonId); command.Parameters.AddWithValue("$name", player.Name);
+            players[player.SourceId] = (long)command.ExecuteScalar()!;
+        }
+        foreach (var match in backup.Matches)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "INSERT INTO Matches (SeasonId, RoundNumber, HomePlayerId, AwayPlayerId, MatchDate, HomeScore, AwayScore, RecordedAt) VALUES ($season, $round, $home, $away, $date, $homeScore, $awayScore, $recorded); SELECT last_insert_rowid();";
+            command.Parameters.AddWithValue("$season", seasonId); command.Parameters.AddWithValue("$round", match.RoundNumber); command.Parameters.AddWithValue("$home", players[match.HomePlayerSourceId]); command.Parameters.AddWithValue("$away", players[match.AwayPlayerSourceId]); command.Parameters.AddWithValue("$date", match.MatchDate?.ToString("O") ?? (object)DBNull.Value); command.Parameters.AddWithValue("$homeScore", match.HomeScore ?? (object)DBNull.Value); command.Parameters.AddWithValue("$awayScore", match.AwayScore ?? (object)DBNull.Value); command.Parameters.AddWithValue("$recorded", match.HomeScore.HasValue && match.AwayScore.HasValue ? DateTime.UtcNow.ToString("O") : (object)DBNull.Value);
+            matches[match.SourceId] = (long)command.ExecuteScalar()!;
+        }
+        foreach (var stat in backup.Statistics)
+        {
+            if (!matches.TryGetValue(stat.MatchSourceId, out var matchId) || !players.TryGetValue(stat.PlayerSourceId, out var playerId)) continue;
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "INSERT INTO PlayerMatchStats (MatchId, PlayerId, ThreeDartAverage, LegsPlayed, HighFinish, ShortLeg, Scores80, Scores100, Scores140, Scores180) VALUES ($match, $player, $avg, $legs, $finish, $short, $eighty, $hundred, $oneforty, $oneeighty);";
+            command.Parameters.AddWithValue("$match", matchId); command.Parameters.AddWithValue("$player", playerId); command.Parameters.AddWithValue("$avg", (object?)stat.Statistics.ThreeDartAverage ?? DBNull.Value); command.Parameters.AddWithValue("$legs", stat.Statistics.LegsPlayed); command.Parameters.AddWithValue("$finish", (object?)stat.Statistics.HighFinish ?? DBNull.Value); command.Parameters.AddWithValue("$short", (object?)stat.Statistics.ShortLeg ?? DBNull.Value); command.Parameters.AddWithValue("$eighty", stat.Statistics.Scores80); command.Parameters.AddWithValue("$hundred", stat.Statistics.Scores100); command.Parameters.AddWithValue("$oneforty", stat.Statistics.Scores140); command.Parameters.AddWithValue("$oneeighty", stat.Statistics.Scores180); command.ExecuteNonQuery();
+        }
+        transaction.Commit();
+        return seasonId;
+    }
+
     public List<LeagueMatch> GetMatches(long seasonId)
     {
         using var connection = Open(); using var command = connection.CreateCommand();

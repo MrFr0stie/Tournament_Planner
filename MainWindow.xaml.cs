@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -352,6 +353,36 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() != true) return;
         var rows = _database.GetStandings(_seasonId!.Value);
         StandingsExporter.ExportCsv(dialog.FileName, rows);
+    }
+
+    private void ExportTournament_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireSeason()) return;
+        var dialog = new SaveFileDialog { Filter = "Dartboard tournament (*.dartboard.json)|*.dartboard.json", FileName = $"{_activeCompetition?.Name ?? "dartboard"}-backup.dartboard.json" };
+        if (dialog.ShowDialog() != true) return;
+        TournamentTransferService.Export(dialog.FileName, _database.GetTournamentBackup(_seasonId!.Value));
+        MessageBox.Show(T("Tournament backup exported."), T("Export complete"), MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void ImportTournament_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog { Filter = "Dartboard tournament (*.dartboard.json)|*.dartboard.json|JSON files (*.json)|*.json" };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            var backup = TournamentTransferService.Import(dialog.FileName);
+            _seasonId = _database.ImportTournament(backup);
+            _selectedMatch = null;
+            RefreshCompetitionSelector(_seasonId);
+            LoadSeasonData();
+            RefreshDashboard();
+            ShowView(MatchesView, "Matches", "Select match  •  Record result  •  Add optional statistics");
+            MessageBox.Show(T("Tournament imported. You can continue where it left off."), T("Import complete"), MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or System.Text.Json.JsonException)
+        {
+            MessageBox.Show(T("The selected file is not a valid tournament export."), T("Import failed"), MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void StatsPlayerComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => LoadStatsForSelectedPlayer();

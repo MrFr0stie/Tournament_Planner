@@ -89,3 +89,37 @@ public sealed class MatchStats
     public int Scores140 { get; set; }
     public int Scores180 { get; set; }
 }
+
+public sealed class TournamentBackup
+{
+    public int FormatVersion { get; set; } = 1;
+    public DateTime ExportedAt { get; set; } = DateTime.UtcNow;
+    public Competition Competition { get; set; } = new();
+    public List<PlayerBackup> Players { get; set; } = new();
+    public List<MatchBackup> Matches { get; set; } = new();
+    public List<MatchStatsBackup> Statistics { get; set; } = new();
+}
+
+public sealed class PlayerBackup
+{
+    public long SourceId { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
+public sealed class MatchBackup
+{
+    public long SourceId { get; set; }
+    public int RoundNumber { get; set; }
+    public long HomePlayerSourceId { get; set; }
+    public long AwayPlayerSourceId { get; set; }
+    public DateTime? MatchDate { get; set; }
+    public int? HomeScore { get; set; }
+    public int? AwayScore { get; set; }
+}
+
+public sealed class MatchStatsBackup
+{
+    public long MatchSourceId { get; set; }
+    public long PlayerSourceId { get; set; }
+    public MatchStats Statistics { get; set; } = new();
+}

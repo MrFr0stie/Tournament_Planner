@@ -14,6 +14,9 @@ public partial class MainWindow : Window
     private LeagueMatch? _selectedMatch;
     private Competition? _activeCompetition;
     private bool _isSelectingCompetition;
+    private bool _isApplyingPreferences;
+    private bool _german;
+    private bool _darkMode;
     private List<LeagueMatch> _allMatches = new();
 
     public ObservableCollection<Player> Players { get; } = new();
@@ -24,6 +27,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = this;
         _database = new LeagueDatabase();
+        ApplyPreferences();
         PopulateDefaultPlayers();
         LoadLatestSeason();
         ShowView(DashboardView, "Dashboard", string.Empty);
@@ -66,10 +70,12 @@ public partial class MainWindow : Window
     private void PrepareNewCompetition()
     {
         _selectedMatch = null;
-        SeasonNameTextBox.Text = "New competition";
+        SeasonNameTextBox.Text = T("New competition");
         CompetitionTypeComboBox.SelectedIndex = 0;
         MeetingsComboBox.SelectedIndex = 0;
-        LegsToWinComboBox.SelectedIndex = 1;
+        LegsToWinComboBox.SelectedIndex = 4;
+        MatchdayComboBox.SelectedIndex = 0;
+        SeasonStartDatePicker.SelectedDate = NextMatchday(DateTime.Today, DayOfWeek.Monday);
         PopulateDefaultPlayers();
         ShowView(SetupView, "New competition", "Set up once, then manage every match from the workspace.");
     }
@@ -77,7 +83,7 @@ public partial class MainWindow : Window
     private void PopulateDefaultPlayers()
     {
         Players.Clear();
-        for (var i = 1; i <= 4; i++) Players.Add(new Player { Id = i, Name = $"Player {i}" });
+        for (var i = 1; i <= 4; i++) Players.Add(new Player { Id = i, Name = $"{T("Player")} {i}" });
     }
 
     private void LoadSeasonData()
@@ -112,7 +118,7 @@ public partial class MainWindow : Window
     {
         if (!_seasonId.HasValue || _activeCompetition is null)
         {
-            DashboardCompetitionText.Text = "No competition selected";
+            DashboardCompetitionText.Text = T("No competition selected");
             DashboardFormatText.Text = string.Empty;
             PlayerCountText.Text = MatchCountText.Text = PlayedCountText.Text = "0";
             NextMatchesGrid.ItemsSource = null;
@@ -122,7 +128,7 @@ public partial class MainWindow : Window
         var matches = _database.GetMatches(_seasonId.Value);
         var standings = _database.GetStandings(_seasonId.Value);
         DashboardCompetitionText.Text = _activeCompetition.Name;
-        DashboardFormatText.Text = $"{_activeCompetition.Type}  ·  First to {_activeCompetition.LegsToWin} legs";
+        DashboardFormatText.Text = $"{T(_activeCompetition.Type)}  ·  {_activeCompetition.GetFormatDisplay(_german)}";
         PlayerCountText.Text = standings.Count.ToString();
         MatchCountText.Text = matches.Count.ToString();
         PlayedCountText.Text = matches.Count(match => match.IsPlayed).ToString();
@@ -154,6 +160,7 @@ public partial class MainWindow : Window
         StatisticsGrid.ItemsSource = _database.GetPlayerStatistics(_seasonId!.Value);
         ShowView(StatsView, "Statistics", "Season totals");
     }
+    private void ShowOptions_Click(object sender, RoutedEventArgs e) => ShowView(OptionsView, "Options", string.Empty);
     private void OpenMatches_Click(object sender, RoutedEventArgs e)
     {
         ShowMatches_Click(sender, e);
@@ -189,23 +196,24 @@ public partial class MainWindow : Window
         MatchesView.Visibility = Visibility.Collapsed;
         StandingsView.Visibility = Visibility.Collapsed;
         StatsView.Visibility = Visibility.Collapsed;
+        OptionsView.Visibility = Visibility.Collapsed;
         target.Visibility = Visibility.Visible;
-        PageTitle.Text = title;
-        PageSubtitle.Text = subtitle;
+        PageTitle.Text = T(title);
+        PageSubtitle.Text = T(subtitle);
         PageSubtitle.Visibility = string.IsNullOrWhiteSpace(subtitle) ? Visibility.Collapsed : Visibility.Visible;
         SetActiveNavigation(target);
     }
 
     private void SetActiveNavigation(UIElement target)
     {
-        var buttons = new[] { NavOverview, NavMatches, NavStandings, NavStatistics };
+        var buttons = new[] { NavOverview, NavMatches, NavStandings, NavStatistics, NavOptions };
         foreach (var button in buttons)
         {
             button.Background = Brushes.Transparent;
             button.Foreground = new SolidColorBrush(Color.FromRgb(185, 194, 211));
         }
         if (target == SetupView) return;
-        var active = target == DashboardView ? NavOverview : target == MatchesView ? NavMatches : target == StandingsView ? NavStandings : NavStatistics;
+        var active = target == DashboardView ? NavOverview : target == MatchesView ? NavMatches : target == StandingsView ? NavStandings : target == StatsView ? NavStatistics : NavOptions;
         active.Background = new SolidColorBrush(Color.FromRgb(32, 43, 63));
         active.Foreground = Brushes.White;
     }
@@ -213,11 +221,11 @@ public partial class MainWindow : Window
     private bool RequireSeason()
     {
         if (_seasonId.HasValue) return true;
-        MessageBox.Show("Create a season first by adding players on the League setup page.", "No active season", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(T("Create a season first by adding players on the League setup page."), T("No active season"), MessageBoxButton.OK, MessageBoxImage.Information);
         return false;
     }
 
-    private void AddPlayer_Click(object sender, RoutedEventArgs e) => Players.Add(new Player { Id = Players.Count + 1, Name = $"Player {Players.Count + 1}" });
+    private void AddPlayer_Click(object sender, RoutedEventArgs e) => Players.Add(new Player { Id = Players.Count + 1, Name = $"{T("Player")} {Players.Count + 1}" });
 
     private void RemovePlayer_Click(object sender, RoutedEventArgs e)
     {
@@ -232,23 +240,25 @@ public partial class MainWindow : Window
         var names = Players.Select(p => p.Name.Trim()).ToList();
         if (names.Count < 2)
         {
-            MessageBox.Show("A league needs at least two players.", "Add players", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(T("A league needs at least two players."), T("Add players"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         if (names.Any(string.IsNullOrWhiteSpace) || names.Distinct(StringComparer.OrdinalIgnoreCase).Count() != names.Count)
         {
-            MessageBox.Show("Every player needs a unique name.", "Check player names", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(T("Every player needs a unique name."), T("Check player names"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         var name = SeasonNameTextBox.Text.Trim();
         var type = ((ComboBoxItem)CompetitionTypeComboBox.SelectedItem).Tag.ToString()!;
-        if (string.IsNullOrWhiteSpace(name)) name = type == "Season" ? "New season" : "New tournament";
+        if (string.IsNullOrWhiteSpace(name)) name = type == "Season" ? T("New season") : T("New tournament");
         var meetings = int.Parse(((ComboBoxItem)MeetingsComboBox.SelectedItem).Tag.ToString()!);
-        var legsToWin = int.Parse(((ComboBoxItem)LegsToWinComboBox.SelectedItem).Tag.ToString()!);
-        _seasonId = _database.CreateSeason(name, type, meetings, legsToWin, Players);
+        if (!TryGetFormat(out var formatType, out var formatValue)) return;
+        var firstMatchday = SeasonStartDatePicker.SelectedDate ?? DateTime.Today;
+        var matchday = (DayOfWeek)int.Parse(((ComboBoxItem)MatchdayComboBox.SelectedItem).Tag.ToString()!);
+        _seasonId = _database.CreateSeason(name, type, meetings, formatType, formatValue, firstMatchday, matchday, Players);
         RefreshCompetitionSelector(_seasonId);
         _selectedMatch = null;
-        SelectedMatchText.Text = "Select match";
+        SelectedMatchText.Text = T("Select match");
         ClearStatsInputs();
         LoadSeasonData();
         RefreshDashboard();
@@ -259,10 +269,11 @@ public partial class MainWindow : Window
     {
         _selectedMatch = MatchesGrid.SelectedItem as LeagueMatch;
         if (_selectedMatch is null) return;
-        SelectedMatchText.Text = $"Round {_selectedMatch.RoundNumber}: {_selectedMatch.HomePlayer} vs {_selectedMatch.AwayPlayer}";
+        SelectedMatchText.Text = $"{T("Round")} {_selectedMatch.RoundNumber}: {_selectedMatch.HomePlayer} {T("vs")} {_selectedMatch.AwayPlayer}";
         HomeScoreTextBox.Text = _selectedMatch.HomeScore?.ToString() ?? string.Empty;
         AwayScoreTextBox.Text = _selectedMatch.AwayScore?.ToString() ?? string.Empty;
-        StatsMatchText.Text = $"Round {_selectedMatch.RoundNumber}: {_selectedMatch.HomePlayer} vs {_selectedMatch.AwayPlayer}";
+        MatchdayDatePicker.SelectedDate = _selectedMatch.MatchDate;
+        StatsMatchText.Text = $"{T("Round")} {_selectedMatch.RoundNumber}: {_selectedMatch.HomePlayer} {T("vs")} {_selectedMatch.AwayPlayer}";
         StatsPlayerComboBox.SelectedIndex = 0;
         LoadStatsForSelectedPlayer();
     }
@@ -271,13 +282,12 @@ public partial class MainWindow : Window
     {
         if (_selectedMatch is null)
         {
-            MessageBox.Show("Select a match first.", "No match selected", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(T("Select a match first."), T("No match selected"), MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var legsToWin = _activeCompetition?.LegsToWin ?? 3;
-        if (!int.TryParse(HomeScoreTextBox.Text, out var home) || !int.TryParse(AwayScoreTextBox.Text, out var away) || home < 0 || away < 0 || home == away || Math.Max(home, away) != legsToWin)
+        if (!int.TryParse(HomeScoreTextBox.Text, out var home) || !int.TryParse(AwayScoreTextBox.Text, out var away) || !IsValidResult(home, away))
         {
-            MessageBox.Show($"One player must reach {legsToWin} legs.", "Invalid result", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show($"{T("Enter a valid")} {_activeCompetition?.GetFormatDisplay(_german).ToLowerInvariant() ?? T("match")} {T("result.")}", T("Invalid result"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         _selectedMatch.HomeScore = home;
@@ -287,7 +297,7 @@ public partial class MainWindow : Window
         StandingsGrid.ItemsSource = _database.GetStandings(_seasonId!.Value);
         StatisticsGrid.ItemsSource = _database.GetPlayerStatistics(_seasonId!.Value);
         RefreshDashboard();
-        MessageBox.Show("Result saved. The leaderboard has been recalculated.", "Result recorded", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(T("Result saved. The leaderboard has been recalculated."), T("Result recorded"), MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void AdjustScore_Click(object sender, RoutedEventArgs e)
@@ -300,14 +310,28 @@ public partial class MainWindow : Window
         target.Text = Math.Max(0, score + adjustment).ToString();
     }
 
+    private void UpdateMatchdayDate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedMatch is null || !_seasonId.HasValue || MatchdayDatePicker.SelectedDate is not DateTime date)
+        {
+            MessageBox.Show(T("Select a matchday date first."), T("Matchday date"), MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        _database.UpdateMatchdayDate(_seasonId.Value, _selectedMatch.RoundNumber, date);
+        foreach (var match in _allMatches.Where(match => match.RoundNumber == _selectedMatch.RoundNumber)) match.MatchDate = date;
+        ApplyMatchFilter();
+        RefreshDashboard();
+    }
+
     private void ClearResult_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedMatch is null || !_selectedMatch.IsPlayed)
         {
-            MessageBox.Show("Select a saved result first.", "No saved result", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(T("Select a saved result first."), T("No saved result"), MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
-        var confirmation = MessageBox.Show("Clear this result and its saved match statistics?", "Clear result", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        var confirmation = MessageBox.Show(T("Clear this result and its saved match statistics?"), T("Clear result"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (confirmation != MessageBoxResult.Yes) return;
         _database.ClearResult(_selectedMatch.Id);
         _selectedMatch.HomeScore = null;
@@ -346,24 +370,25 @@ public partial class MainWindow : Window
         Scores80TextBox.Text = stats.Scores80 == 0 ? string.Empty : stats.Scores80.ToString();
         Scores100TextBox.Text = stats.Scores100 == 0 ? string.Empty : stats.Scores100.ToString();
         Scores140TextBox.Text = stats.Scores140 == 0 ? string.Empty : stats.Scores140.ToString();
+        Scores180TextBox.Text = stats.Scores180 == 0 ? string.Empty : stats.Scores180.ToString();
     }
 
     private void SaveStats_Click(object sender, RoutedEventArgs e)
     {
         if (_selectedMatch is null || !_selectedMatch.IsPlayed || StatsPlayerComboBox.SelectedItem is not ComboBoxItem selection)
         {
-            MessageBox.Show("Select a match with a recorded result before saving statistics.", "Result required", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(T("Select a match with a recorded result before saving statistics."), T("Result required"), MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         if (!TryGetStats(out var stats))
         {
-            MessageBox.Show("Use valid non-negative whole numbers. The 3-dart average can be a decimal.", "Check statistics", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(T("Use valid non-negative whole numbers. The 3-dart average can be a decimal."), T("Check statistics"), MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         var isHome = Equals(selection.Tag, "Home");
         _database.SaveStats(_selectedMatch.Id, isHome ? _selectedMatch.HomePlayerId : _selectedMatch.AwayPlayerId, stats);
         StatisticsGrid.ItemsSource = _database.GetPlayerStatistics(_seasonId!.Value);
-        MessageBox.Show("Player statistics saved.", "Statistics recorded", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show(T("Player statistics saved."), T("Statistics recorded"), MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private bool TryGetStats(out MatchStats stats)
@@ -376,10 +401,11 @@ public partial class MainWindow : Window
             ShortLeg = ParseNullableInt(ShortLegTextBox.Text),
             Scores80 = ParseIntOrZero(Scores80TextBox.Text),
             Scores100 = ParseIntOrZero(Scores100TextBox.Text),
-            Scores140 = ParseIntOrZero(Scores140TextBox.Text)
+            Scores140 = ParseIntOrZero(Scores140TextBox.Text),
+            Scores180 = ParseIntOrZero(Scores180TextBox.Text)
         };
         return (string.IsNullOrWhiteSpace(AverageTextBox.Text) || stats.ThreeDartAverage is >= 0)
-            && FieldsAreNonNegativeIntegers(LegsTextBox, HighFinishTextBox, ShortLegTextBox, Scores80TextBox, Scores100TextBox, Scores140TextBox);
+            && FieldsAreNonNegativeIntegers(LegsTextBox, HighFinishTextBox, ShortLegTextBox, Scores80TextBox, Scores100TextBox, Scores140TextBox, Scores180TextBox);
     }
 
     private static bool FieldsAreNonNegativeIntegers(params TextBox[] boxes) => boxes.All(box => string.IsNullOrWhiteSpace(box.Text) || int.TryParse(box.Text, out var value) && value >= 0);
@@ -388,6 +414,62 @@ public partial class MainWindow : Window
     private static double? ParseNullableDouble(string value) => double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out var result) ? result : null;
     private void ClearStatsInputs()
     {
-        AverageTextBox.Clear(); LegsTextBox.Clear(); HighFinishTextBox.Clear(); ShortLegTextBox.Clear(); Scores80TextBox.Clear(); Scores100TextBox.Clear(); Scores140TextBox.Clear();
+        AverageTextBox.Clear(); LegsTextBox.Clear(); HighFinishTextBox.Clear(); ShortLegTextBox.Clear(); Scores80TextBox.Clear(); Scores100TextBox.Clear(); Scores140TextBox.Clear(); Scores180TextBox.Clear();
+    }
+
+    private bool TryGetFormat(out string formatType, out int formatValue)
+    {
+        formatType = "FirstTo";
+        formatValue = 3;
+        if (LegsToWinComboBox.SelectedItem is not ComboBoxItem { Tag: string tag }) return false;
+        var parts = tag.Split(':');
+        return parts.Length == 2 && int.TryParse(parts[1], out formatValue) && (formatType = parts[0]) is "BestOf" or "FirstTo";
+    }
+
+    private bool IsValidResult(int home, int away)
+    {
+        if (home < 0 || away < 0 || _activeCompetition is null) return false;
+        if (!_activeCompetition.IsBestOf) return home != away && Math.Max(home, away) == _activeCompetition.LegsToWin;
+
+        var bestOf = _activeCompetition.LegsToWin;
+        if (home == away) return bestOf % 2 == 0 && home == bestOf / 2;
+        return Math.Max(home, away) == bestOf / 2 + 1 && Math.Min(home, away) < bestOf / 2 + 1;
+    }
+
+    private static DateTime NextMatchday(DateTime date, DayOfWeek dayOfWeek)
+    {
+        var daysUntil = ((int)dayOfWeek - (int)date.DayOfWeek + 7) % 7;
+        return date.Date.AddDays(daysUntil);
+    }
+
+    private string T(string english) => UiLocalizer.Translate(english, _german);
+
+    private void ApplyPreferences()
+    {
+        _isApplyingPreferences = true;
+        _german = _database.GetSetting("language") == "de";
+        _darkMode = _database.GetSetting("theme") == "dark";
+        LanguageComboBox.SelectedIndex = _german ? 1 : 0;
+        ThemeComboBox.SelectedIndex = _darkMode ? 1 : 0;
+        ThemeManager.Apply(_darkMode);
+        UiLocalizer.Apply(this, _german);
+        UiLocalizer.ApplyHeaders(_german, PlayersGrid, NextMatchesGrid, TopStandingsGrid, MatchesGrid, StandingsGrid, StatisticsGrid);
+        _isApplyingPreferences = false;
+    }
+
+    private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isApplyingPreferences || LanguageComboBox.SelectedItem is not ComboBoxItem { Tag: string language }) return;
+        _german = language == "de";
+        _database.SaveSetting("language", language);
+        ApplyPreferences();
+    }
+
+    private void ThemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isApplyingPreferences || ThemeComboBox.SelectedItem is not ComboBoxItem { Tag: string theme }) return;
+        _darkMode = theme == "dark";
+        _database.SaveSetting("theme", theme);
+        ApplyPreferences();
     }
 }

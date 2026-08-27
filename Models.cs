@@ -19,8 +19,12 @@ public sealed class Competition
     public string Type { get; set; } = "Season";
     public int Meetings { get; set; }
     public int LegsToWin { get; set; } = 3;
+    public string FormatType { get; set; } = "FirstTo";
     public DateTime CreatedAt { get; set; }
     public string DisplayName => $"{Name}  ·  {Type}";
+    public bool IsBestOf => FormatType == "BestOf";
+    public string FormatDisplay => IsBestOf ? $"Best of {LegsToWin}" : $"First to {LegsToWin} legs";
+    public string GetFormatDisplay(bool german) => IsBestOf ? $"Best of {LegsToWin}" : german ? $"Erster auf {LegsToWin} Legs" : FormatDisplay;
 }
 
 public sealed class LeagueMatch : INotifyPropertyChanged
@@ -35,6 +39,7 @@ public sealed class LeagueMatch : INotifyPropertyChanged
     public string AwayPlayer { get; set; } = string.Empty;
     public int? HomeScore { get => _homeScore; set { _homeScore = value; OnPropertyChanged(); OnPropertyChanged(nameof(ScoreText)); OnPropertyChanged(nameof(IsPlayed)); OnPropertyChanged(nameof(Status)); } }
     public int? AwayScore { get => _awayScore; set { _awayScore = value; OnPropertyChanged(); OnPropertyChanged(nameof(ScoreText)); OnPropertyChanged(nameof(IsPlayed)); OnPropertyChanged(nameof(Status)); } }
+    public DateTime? MatchDate { get; set; }
     public bool IsPlayed => HomeScore.HasValue && AwayScore.HasValue;
     public string ScoreText => IsPlayed ? $"{HomeScore} – {AwayScore}" : "Pending";
     public string Status => IsPlayed ? "Final" : "Scheduled";
@@ -69,6 +74,7 @@ public sealed class PlayerStatistics
     public int Scores80 { get; set; }
     public int Scores100 { get; set; }
     public int Scores140 { get; set; }
+    public int Scores180 { get; set; }
     public string Initial => string.IsNullOrWhiteSpace(Player) ? "?" : Player[..1].ToUpperInvariant();
 }
 
@@ -81,4 +87,5 @@ public sealed class MatchStats
     public int Scores80 { get; set; }
     public int Scores100 { get; set; }
     public int Scores140 { get; set; }
+    public int Scores180 { get; set; }
 }

@@ -6,16 +6,27 @@ namespace DartLeague;
 
 public static class ThemeManager
 {
-    public static void Apply(bool darkMode)
+    private static readonly Dictionary<string, string> ThemeRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["000000"] = "InkBrush", ["F5F7FB"] = "CanvasBrush", ["0B1020"] = "CanvasBrush", ["121A2B"] = "SurfaceBrush",
+        ["172033"] = "InkBrush", ["F8FAFC"] = "InkBrush", ["718096"] = "MutedBrush", ["A8B2C3"] = "MutedBrush", ["C4D0E3"] = "MutedBrush",
+        ["E6EAF0"] = "LineBrush", ["2C3444"] = "LineBrush", ["31405A"] = "LineBrush", ["5B5CE2"] = "AccentBrush", ["8D90F4"] = "AccentBrush", ["A5B4FC"] = "AccentBrush",
+        ["111827"] = "SidebarBrush", ["0B0E14"] = "SidebarBrush", ["0A1020"] = "SidebarBrush", ["EEF1F7"] = "SoftSurfaceBrush", ["232A37"] = "SoftSurfaceBrush", ["202C43"] = "SoftSurfaceBrush",
+        ["E9EAFF"] = "SoftAccentBrush", ["30315A"] = "SoftAccentBrush", ["303A68"] = "SoftAccentBrush", ["FAFBFC"] = "TableHeaderBrush", ["1C2230"] = "TableHeaderBrush", ["1A253A"] = "TableHeaderBrush",
+        ["F8F9FC"] = "TableHoverBrush", ["202737"] = "TableHoverBrush", ["1B2940"] = "TableHoverBrush", ["E8F7F0"] = "SuccessSurfaceBrush", ["143A2D"] = "SuccessSurfaceBrush", ["173D32"] = "SuccessSurfaceBrush",
+        ["4A5568"] = "MutedBrush", ["4D4FC7"] = "AccentBrush", ["5456CC"] = "AccentBrush", ["4E50CC"] = "AccentBrush", ["B7C4D9"] = "MutedBrush", ["8F9CB2"] = "MutedBrush"
+    };
+
+    public static void Apply(Window window, bool darkMode)
     {
         var palette = darkMode
             ? new Dictionary<string, string>
             {
-                ["CanvasBrush"] = "#10131B", ["SurfaceBrush"] = "#171C26", ["InputSurfaceBrush"] = "#1B2130",
-                ["InkBrush"] = "#F4F6FB", ["MutedBrush"] = "#A8B2C3", ["LineBrush"] = "#2C3444",
-                ["AccentBrush"] = "#8D90F4", ["SidebarBrush"] = "#0B0E14", ["SoftSurfaceBrush"] = "#232A37",
-                ["SoftAccentBrush"] = "#30315A", ["TableHeaderBrush"] = "#1C2230", ["TableHoverBrush"] = "#202737",
-                ["SuccessSurfaceBrush"] = "#143A2D"
+                ["CanvasBrush"] = "#0B1020", ["SurfaceBrush"] = "#121A2B", ["InputSurfaceBrush"] = "#172238",
+                ["InkBrush"] = "#F8FAFC", ["MutedBrush"] = "#C4D0E3", ["LineBrush"] = "#31405A",
+                ["AccentBrush"] = "#A5B4FC", ["SidebarBrush"] = "#0A1020", ["SoftSurfaceBrush"] = "#202C43",
+                ["SoftAccentBrush"] = "#303A68", ["TableHeaderBrush"] = "#1A253A", ["TableHoverBrush"] = "#1B2940",
+                ["SuccessSurfaceBrush"] = "#173D32"
             }
             : new Dictionary<string, string>
             {
@@ -28,6 +39,45 @@ public static class ThemeManager
 
         foreach (var (key, color) in palette)
             Application.Current.Resources[key] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)!);
+
+        window.Background = (Brush)Application.Current.Resources["CanvasBrush"];
+        window.Foreground = (Brush)Application.Current.Resources["InkBrush"];
+        ApplyPalette(window);
+    }
+
+    private static void ApplyPalette(DependencyObject root)
+    {
+        var visited = new HashSet<DependencyObject>();
+        ApplyPalette(root, visited);
+    }
+
+    private static void ApplyPalette(DependencyObject element, HashSet<DependencyObject> visited)
+    {
+        if (!visited.Add(element)) return;
+        if (element is Control control)
+        {
+            control.Background = Themed(control.Background);
+            control.Foreground = Themed(control.Foreground);
+            control.BorderBrush = Themed(control.BorderBrush);
+        }
+        if (element is Border border)
+        {
+            border.Background = Themed(border.Background);
+            border.BorderBrush = Themed(border.BorderBrush);
+        }
+        if (element is Panel panel) panel.Background = Themed(panel.Background);
+        if (element is TextBlock textBlock) textBlock.Foreground = Themed(textBlock.Foreground);
+
+        foreach (var child in LogicalTreeHelper.GetChildren(element).OfType<DependencyObject>()) ApplyPalette(child, visited);
+        if (element is Visual visual)
+            for (var index = 0; index < VisualTreeHelper.GetChildrenCount(visual); index++) ApplyPalette(VisualTreeHelper.GetChild(visual, index), visited);
+    }
+
+    private static Brush? Themed(Brush? brush)
+    {
+        if (brush is not SolidColorBrush solid) return brush;
+        var key = $"{solid.Color.R:X2}{solid.Color.G:X2}{solid.Color.B:X2}";
+        return ThemeRoles.TryGetValue(key, out var role) && Application.Current.Resources[role] is Brush themed ? themed : brush;
     }
 }
 

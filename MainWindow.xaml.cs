@@ -503,7 +503,7 @@ public partial class MainWindow : Window
         _darkMode = _database.GetSetting("theme") == "dark";
         LanguageComboBox.SelectedIndex = _german ? 1 : 0;
         ThemeComboBox.SelectedIndex = _darkMode ? 1 : 0;
-        ThemeManager.Apply(_darkMode);
+        ThemeManager.Apply(this, _darkMode);
         UiLocalizer.Apply(this, _german);
         UiLocalizer.ApplyHeaders(_german, PlayersGrid, NextMatchesGrid, TopStandingsGrid, MatchesGrid, StandingsGrid, StatisticsGrid);
         _isApplyingPreferences = false;

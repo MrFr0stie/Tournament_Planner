@@ -57,13 +57,15 @@
         </Style>
         <Style x:Key="ScorePill" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource SoftSurfaceBrush}"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="9,5"/>
+            <Setter Property="MinWidth" Value="72"/>
+            <Setter Property="CornerRadius" Value="7"/>
+            <Setter Property="Padding" Value="12,6"/>
         </Style>
         <Style x:Key="StatusPill" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource SoftSurfaceBrush}"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="MinWidth" Value="82"/>
+            <Setter Property="CornerRadius" Value="7"/>
+            <Setter Property="Padding" Value="10,6"/>
             <Style.Triggers>
                 <DataTrigger Binding="{Binding Status}" Value="Final"><Setter Property="Background" Value="{DynamicResource SuccessSurfaceBrush}"/></DataTrigger>
             </Style.Triggers>
@@ -142,14 +144,69 @@
             </Setter>
         </Style>
         <Style x:Key="ScoreBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Padding" Value="0"/>
             <Setter Property="MinHeight" Value="0"/>
-            <Setter Property="FontSize" Value="22"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="FontSize" Value="20"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="TextAlignment" Value="Center"/>
             <Setter Property="Background" Value="#1C2740"/>
             <Setter Property="BorderBrush" Value="#33415F"/>
             <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style x:Key="ScoreStepButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="50"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontSize" Value="17"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Background" Value="#26334C"/>
+            <Setter Property="Foreground" Value="#DCE4F2"/>
+        </Style>
+        <Style x:Key="ScoreSecondaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Padding" Value="11,7"/>
+            <Setter Property="MinHeight" Value="34"/>
+            <Setter Property="Background" Value="#26334C"/>
+            <Setter Property="Foreground" Value="#E7EBF4"/>
+        </Style>
+        <Style TargetType="DatePicker">
+            <Setter Property="Height" Value="34"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource InputSurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource LineBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style x:Key="ScoreDatePicker" TargetType="DatePicker">
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Foreground" Value="#F3F6FC"/>
+            <Setter Property="Background" Value="#1B263C"/>
+            <Setter Property="BorderBrush" Value="#33425F"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DatePicker">
+                        <Grid x:Name="PART_Root">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9">
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="34"/></Grid.ColumnDefinitions>
+                                    <DatePickerTextBox x:Name="PART_TextBox" Background="Transparent" BorderThickness="0" Foreground="{TemplateBinding Foreground}" Padding="10,0" VerticalContentAlignment="Center" FontSize="12"/>
+                                    <ToggleButton x:Name="PART_Button" Grid.Column="1" Focusable="False" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" Background="Transparent" BorderThickness="0">
+                                        <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border Background="Transparent" CornerRadius="0,8,8,0"><TextBlock Text="▦" Foreground="#B7C4D9" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></ControlTemplate></ToggleButton.Template>
+                                    </ToggleButton>
+                                </Grid>
+                            </Border>
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom" IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}" PopupAnimation="Fade">
+                                <Border Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="1" CornerRadius="10" Padding="5" Margin="0,6,0,0">
+                                    <Calendar x:Name="PART_Calendar" SelectedDate="{Binding SelectedDate, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" DisplayDate="{Binding DisplayDate, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="ComboBox">
             <Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
@@ -190,11 +247,15 @@
         <Style TargetType="DataGrid">
             <Setter Property="AutoGenerateColumns" Value="False"/><Setter Property="CanUserAddRows" Value="False"/><Setter Property="CanUserDeleteRows" Value="False"/><Setter Property="CanUserResizeRows" Value="False"/><Setter Property="CanUserSortColumns" Value="True"/>
             <Setter Property="GridLinesVisibility" Value="Horizontal"/><Setter Property="HorizontalGridLinesBrush" Value="{DynamicResource LineBrush}"/><Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
-            <Setter Property="RowHeight" Value="52"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="RowHeaderWidth" Value="0"/>
+            <Setter Property="RowHeight" Value="56"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="RowHeaderWidth" Value="0"/>
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/><Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
-            <Setter Property="CellStyle"><Setter.Value><Style TargetType="DataGridCell"><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="12,0"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/></Style></Setter.Value></Setter>
+            <Setter Property="CellStyle"><Setter.Value><Style TargetType="DataGridCell"><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="16,0"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/></Style></Setter.Value></Setter>
             <Setter Property="RowStyle"><Setter.Value><Style TargetType="DataGridRow"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="Foreground" Value="{DynamicResource InkBrush}"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource TableHoverBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource SoftAccentBrush}"/><Setter Property="Foreground" Value="{DynamicResource InkBrush}"/></Trigger></Style.Triggers></Style></Setter.Value></Setter>
         </Style>
-        <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource TableHeaderBrush}"/><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/><Setter Property="FontSize" Value="11"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Padding" Value="12,11"/><Setter Property="BorderThickness" Value="0"/></Style>
+        <Style x:Key="TableCenteredCell" TargetType="DataGridCell"><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="8,0"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/></Style>
+        <Style x:Key="TableCenteredHeader" TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource TableHeaderBrush}"/><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/><Setter Property="FontSize" Value="11"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Padding" Value="8,12"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="BorderThickness" Value="0"/></Style>
+        <Style x:Key="TablePlayerText" TargetType="TextBlock"><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="VerticalAlignment" Value="Center"/></Style>
+        <Style x:Key="TableCenteredText" TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Center"/><Setter Property="VerticalAlignment" Value="Center"/></Style>
+        <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource TableHeaderBrush}"/><Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/><Setter Property="FontSize" Value="11"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Padding" Value="16,12"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="BorderThickness" Value="0"/></Style>
     </Application.Resources>
 </Application>

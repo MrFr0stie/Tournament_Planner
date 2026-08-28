@@ -50,11 +50,14 @@
                     <TextBlock x:Name="PageTitle" Text="Overview" FontSize="30" FontWeight="SemiBold"/>
                     <TextBlock x:Name="PageSubtitle" Visibility="Collapsed"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <WrapPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <ComboBox x:Name="CompetitionSelector" Width="292" DisplayMemberPath="DisplayName" SelectionChanged="CompetitionSelector_SelectionChanged"/>
+                    <CheckBox x:Name="ShowArchivedCheckBox" Content="Show archived" Foreground="{DynamicResource InkBrush}" VerticalAlignment="Center" Margin="16,0,0,0" Checked="ShowArchivedCheckBox_Changed" Unchecked="ShowArchivedCheckBox_Changed"/>
+                    <Button x:Name="ArchiveCompetitionButton" Content="Archive" Click="ArchiveCompetition_Click" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0"/>
+                    <Button x:Name="DeleteCompetitionButton" Content="Delete" Click="DeleteCompetition_Click" Background="#C23B4A" Margin="8,0,0,0"/>
                     <Button Content="Import tournament" Click="ImportTournament_Click" Style="{StaticResource SecondaryButton}" Margin="10,0,0,0"/>
                     <Button Content="New competition" Click="NewCompetition_Click" Margin="10,0,0,0"/>
-                </StackPanel>
+                </WrapPanel>
             </Grid>
 
             <Grid Grid.Row="1" MinHeight="0" ClipToBounds="True">

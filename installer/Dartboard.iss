@@ -1,5 +1,5 @@
 #define MyAppName "Dartboard"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "Dartboard"
 #define MyAppExeName "DartLeague.exe"
 

@@ -44,7 +44,7 @@ public sealed class LeagueDatabase
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            CREATE TABLE IF NOT EXISTS Seasons (Id INTEGER PRIMARY KEY, Name TEXT NOT NULL, Type TEXT NOT NULL DEFAULT 'Season', Meetings INTEGER NOT NULL, LegsToWin INTEGER NOT NULL DEFAULT 3, FormatType TEXT NOT NULL DEFAULT 'FirstTo', CreatedAt TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS Seasons (Id INTEGER PRIMARY KEY, Name TEXT NOT NULL, Type TEXT NOT NULL DEFAULT 'Season', Meetings INTEGER NOT NULL, LegsToWin INTEGER NOT NULL DEFAULT 3, FormatType TEXT NOT NULL DEFAULT 'FirstTo', IsArchived INTEGER NOT NULL DEFAULT 0, CreatedAt TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS ApplicationSettings (SettingKey TEXT PRIMARY KEY, SettingValue TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS Players (Id INTEGER PRIMARY KEY, SeasonId INTEGER NOT NULL REFERENCES Seasons(Id) ON DELETE CASCADE, Name TEXT NOT NULL, IsWithdrawn INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS Matches (Id INTEGER PRIMARY KEY, SeasonId INTEGER NOT NULL REFERENCES Seasons(Id) ON DELETE CASCADE, RoundNumber INTEGER NOT NULL, HomePlayerId INTEGER NOT NULL REFERENCES Players(Id), AwayPlayerId INTEGER NOT NULL REFERENCES Players(Id), MatchDate TEXT NULL, HomeScore INTEGER NULL, AwayScore INTEGER NULL, RecordedAt TEXT NULL);
@@ -58,11 +58,13 @@ public sealed class LeagueDatabase
         var hasTypeColumn = false;
         var hasLegsToWinColumn = false;
         var hasFormatTypeColumn = false;
+        var hasArchivedColumn = false;
         while (reader.Read())
         {
             hasTypeColumn |= reader.GetString(1).Equals("Type", StringComparison.OrdinalIgnoreCase);
             hasLegsToWinColumn |= reader.GetString(1).Equals("LegsToWin", StringComparison.OrdinalIgnoreCase);
             hasFormatTypeColumn |= reader.GetString(1).Equals("FormatType", StringComparison.OrdinalIgnoreCase);
+            hasArchivedColumn |= reader.GetString(1).Equals("IsArchived", StringComparison.OrdinalIgnoreCase);
         }
         reader.Dispose();
         if (!hasTypeColumn)
@@ -81,6 +83,12 @@ public sealed class LeagueDatabase
         {
             using var migration = connection.CreateCommand();
             migration.CommandText = "ALTER TABLE Seasons ADD COLUMN FormatType TEXT NOT NULL DEFAULT 'FirstTo';";
+            migration.ExecuteNonQuery();
+        }
+        if (!hasArchivedColumn)
+        {
+            using var migration = connection.CreateCommand();
+            migration.CommandText = "ALTER TABLE Seasons ADD COLUMN IsArchived INTEGER NOT NULL DEFAULT 0;";
             migration.ExecuteNonQuery();
         }
 
@@ -170,24 +178,41 @@ public sealed class LeagueDatabase
     public Competition? GetLatestSeason()
     {
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name, Type, Meetings, LegsToWin, FormatType, CreatedAt FROM Seasons ORDER BY Id DESC LIMIT 1;";
+        command.CommandText = "SELECT Id, Name, Type, Meetings, LegsToWin, FormatType, IsArchived, CreatedAt FROM Seasons WHERE IsArchived=0 ORDER BY Id DESC LIMIT 1;";
         using var reader = command.ExecuteReader();
-        return reader.Read() ? new Competition { Id = reader.GetInt64(0), Name = reader.GetString(1), Type = reader.GetString(2), Meetings = reader.GetInt32(3), LegsToWin = reader.GetInt32(4), FormatType = reader.GetString(5), CreatedAt = DateTime.Parse(reader.GetString(6)) } : null;
+        return reader.Read() ? new Competition { Id = reader.GetInt64(0), Name = reader.GetString(1), Type = reader.GetString(2), Meetings = reader.GetInt32(3), LegsToWin = reader.GetInt32(4), FormatType = reader.GetString(5), IsArchived = reader.GetInt32(6) == 1, CreatedAt = DateTime.Parse(reader.GetString(7)) } : null;
     }
 
-    public List<Competition> GetCompetitions()
+    public List<Competition> GetCompetitions(bool includeArchived = false)
     {
         using var connection = Open(); using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name, Type, Meetings, LegsToWin, FormatType, CreatedAt FROM Seasons ORDER BY Id DESC;";
+        command.CommandText = $"SELECT Id, Name, Type, Meetings, LegsToWin, FormatType, IsArchived, CreatedAt FROM Seasons {(includeArchived ? string.Empty : "WHERE IsArchived=0")} ORDER BY Id DESC;";
         using var reader = command.ExecuteReader();
         var competitions = new List<Competition>();
-        while (reader.Read()) competitions.Add(new Competition { Id = reader.GetInt64(0), Name = reader.GetString(1), Type = reader.GetString(2), Meetings = reader.GetInt32(3), LegsToWin = reader.GetInt32(4), FormatType = reader.GetString(5), CreatedAt = DateTime.Parse(reader.GetString(6)) });
+        while (reader.Read()) competitions.Add(new Competition { Id = reader.GetInt64(0), Name = reader.GetString(1), Type = reader.GetString(2), Meetings = reader.GetInt32(3), LegsToWin = reader.GetInt32(4), FormatType = reader.GetString(5), IsArchived = reader.GetInt32(6) == 1, CreatedAt = DateTime.Parse(reader.GetString(7)) });
         return competitions;
+    }
+
+    public void SetCompetitionArchived(long seasonId, bool archived)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Seasons SET IsArchived=$archived WHERE Id=$season;";
+        command.Parameters.AddWithValue("$archived", archived ? 1 : 0);
+        command.Parameters.AddWithValue("$season", seasonId);
+        command.ExecuteNonQuery();
+    }
+
+    public void DeleteCompetition(long seasonId)
+    {
+        using var connection = Open(); using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM Seasons WHERE Id=$season;";
+        command.Parameters.AddWithValue("$season", seasonId);
+        command.ExecuteNonQuery();
     }
 
     public TournamentBackup GetTournamentBackup(long seasonId)
     {
-        var competition = GetCompetitions().FirstOrDefault(item => item.Id == seasonId) ?? throw new InvalidOperationException("Competition not found.");
+        var competition = GetCompetitions(includeArchived: true).FirstOrDefault(item => item.Id == seasonId) ?? throw new InvalidOperationException("Competition not found.");
         using var connection = Open();
         var backup = new TournamentBackup { Competition = competition };
 

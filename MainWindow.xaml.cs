@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private Competition? _activeCompetition;
     private bool _isSelectingCompetition;
     private bool _isApplyingPreferences;
+    private bool _showArchived;
     private bool _german;
     private bool _darkMode;
     private List<LeagueMatch> _allMatches = new();
@@ -37,7 +38,7 @@ public partial class MainWindow : Window
     private void LoadLatestSeason()
     {
         var season = _database.GetLatestSeason();
-        if (season is not null) _seasonId = season.Id;
+        _seasonId = season?.Id;
         RefreshCompetitionSelector(_seasonId);
         LoadSeasonData();
         RefreshDashboard();
@@ -47,11 +48,13 @@ public partial class MainWindow : Window
     {
         _isSelectingCompetition = true;
         Competitions.Clear();
-        foreach (var competition in _database.GetCompetitions()) Competitions.Add(competition);
+        foreach (var competition in _database.GetCompetitions(_showArchived)) Competitions.Add(competition);
         CompetitionSelector.ItemsSource = Competitions;
-        CompetitionSelector.SelectedItem = Competitions.FirstOrDefault(c => c.Id == selectedId);
+        CompetitionSelector.SelectedItem = Competitions.FirstOrDefault(c => c.Id == selectedId) ?? Competitions.FirstOrDefault();
         _activeCompetition = CompetitionSelector.SelectedItem as Competition;
+        _seasonId = _activeCompetition?.Id;
         _isSelectingCompetition = false;
+        UpdateCompetitionActions();
     }
 
     private void CompetitionSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -64,6 +67,64 @@ public partial class MainWindow : Window
         ClearStatsInputs();
         LoadSeasonData();
         RefreshDashboard();
+        UpdateCompetitionActions();
+    }
+
+    private void ShowArchivedCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        _showArchived = ShowArchivedCheckBox.IsChecked == true;
+        RefreshCompetitionSelector(_seasonId);
+        LoadSeasonData();
+        RefreshDashboard();
+    }
+
+    private void UpdateCompetitionActions()
+    {
+        var hasCompetition = _activeCompetition is not null;
+        ArchiveCompetitionButton.IsEnabled = hasCompetition;
+        DeleteCompetitionButton.IsEnabled = hasCompetition;
+        ArchiveCompetitionButton.Content = T(_activeCompetition?.IsArchived == true ? "Restore" : "Archive");
+    }
+
+    private void ArchiveCompetition_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeCompetition is null || !_seasonId.HasValue) return;
+
+        var archive = !_activeCompetition.IsArchived;
+        var message = archive
+            ? string.Format(T("Archive {0}? It will be hidden from the usual competition list, but can be restored at any time."), _activeCompetition.Name)
+            : string.Format(T("Restore {0} to the active competition list?"), _activeCompetition.Name);
+        var title = archive ? T("Archive competition") : T("Restore competition");
+        if (MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+        _database.SetCompetitionArchived(_seasonId.Value, archive);
+        var archivedId = _seasonId;
+        _selectedMatch = null;
+        ClearStatsInputs();
+        RefreshCompetitionSelector(_showArchived ? archivedId : null);
+        LoadSeasonData();
+        RefreshDashboard();
+        if (_activeCompetition is null) ShowView(DashboardView, "Dashboard", string.Empty);
+    }
+
+    private void DeleteCompetition_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activeCompetition is null || !_seasonId.HasValue) return;
+
+        var name = _activeCompetition.Name;
+        var confirmation = MessageBox.Show(
+            string.Format(T("Permanently delete {0}? All players, matches, results, and statistics in this competition will be removed."), name),
+            T("Delete competition"), MessageBoxButton.YesNo, MessageBoxImage.Warning);
+        if (confirmation != MessageBoxResult.Yes) return;
+
+        _database.DeleteCompetition(_seasonId.Value);
+        _seasonId = null;
+        _selectedMatch = null;
+        ClearStatsInputs();
+        RefreshCompetitionSelector(null);
+        LoadSeasonData();
+        RefreshDashboard();
+        if (_activeCompetition is null) ShowView(DashboardView, "Dashboard", string.Empty);
     }
 
     private void NewCompetition_Click(object sender, RoutedEventArgs e) => PrepareNewCompetition();
@@ -89,7 +150,14 @@ public partial class MainWindow : Window
 
     private void LoadSeasonData()
     {
-        if (!_seasonId.HasValue) return;
+        if (!_seasonId.HasValue)
+        {
+            _allMatches = new List<LeagueMatch>();
+            MatchesGrid.ItemsSource = null;
+            StandingsGrid.ItemsSource = null;
+            StatisticsGrid.ItemsSource = null;
+            return;
+        }
         _allMatches = _database.GetMatches(_seasonId.Value);
         ApplyMatchFilter();
         StandingsGrid.ItemsSource = _database.GetStandings(_seasonId.Value);

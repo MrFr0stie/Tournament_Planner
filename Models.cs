@@ -20,8 +20,9 @@ public sealed class Competition
     public int Meetings { get; set; }
     public int LegsToWin { get; set; } = 3;
     public string FormatType { get; set; } = "FirstTo";
+    public bool IsArchived { get; set; }
     public DateTime CreatedAt { get; set; }
-    public string DisplayName => $"{Name}  ·  {Type}";
+    public string DisplayName => IsArchived ? $"{Name}  ·  {Type}  ·  Archived" : $"{Name}  ·  {Type}";
     public bool IsBestOf => FormatType == "BestOf";
     public string FormatDisplay => IsBestOf ? $"Best of {LegsToWin}" : $"First to {LegsToWin} legs";
     public string GetFormatDisplay(bool german) => IsBestOf ? $"Best of {LegsToWin}" : german ? $"Erster auf {LegsToWin} Legs" : FormatDisplay;
